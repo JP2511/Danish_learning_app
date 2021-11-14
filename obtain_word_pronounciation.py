@@ -5,12 +5,11 @@ website.
 
 import re
 import os
-
 import asyncio
 import aiohttp
 import aiofiles
 
-from typing import List, Set
+from typing import Set
 
 ###############################################################################
 # synchronous read of the words from a file
@@ -49,7 +48,7 @@ def check_words(all_words: Set[str]) -> Set[str]:
           words for which we want the associated mp3 file, but we don't already 
         have the file.
     """
-    
+
     if os.path.exists("mp3_files"):
         pre_existing_words = set(os.listdir("./mp3_files/"))
         return {word for word in all_words 
@@ -73,9 +72,9 @@ async def dwn_mp3_file(session: aiohttp.ClientSession, link: str, word: str):
     """
 
     async with session.get(link) as rsp:
-        if rsp.status_code == 200:
-            async with aiofiles.open(word + ".mp3", 'r') as f:
-                f.write(await rsp.read())
+        if rsp.status == 200:
+            async with aiofiles.open(f"./mp3_files/{word}.mp3", 'wb') as f:
+                await f.write(await rsp.read())
 
 
 
@@ -90,13 +89,38 @@ async def request_word_page(session: aiohttp.ClientSession, word: str,
         pattern: pattern that finds the mp3 file URL
     """
 
-    async with session.get('https://ordnet.dk/ddo/ordbog?query='+str) as rsp:
-        if rsp.status_code == 200:
-            await dwn_mp3_file(session, re.findall(pattern, await rsp.text()), 
-                                word)
+    async with session.get('https://ordnet.dk/ddo/ordbog?query='+ word) as rsp:
+        if rsp.status == 200:
+            await dwn_mp3_file(session, 
+                               re.findall(pattern, await rsp.text())[0], word)
 
 
 async def make_all_requests(all_words: Set[str]):
     pattern = re.compile('href="([^"]+\.mp3)"')
     async with aiohttp.ClientSession() as session:
-        await asyncio.gather(*[request_word_page(session, word, pattern)])
+        await asyncio.gather(*[request_word_page(session, word, pattern)
+                                for word in all_words])
+
+
+###############################################################################
+# joining the two parts
+
+def main(filename: str):
+    """Downloads the mp3 sound file associated with each word if it has not
+    already been downloaded.
+
+    Args:
+        filename: name of the file that contains the words
+    
+    Requires:
+        filename should be a valid name of a file
+        the words in the file [filename] should be in separated lines
+    """
+    all_words = check_words(get_words(filename))
+    asyncio.run(make_all_requests(all_words))
+
+
+###############################################################################
+
+if __name__ == '__main__':
+    main('words.txt')
