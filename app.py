@@ -2,13 +2,85 @@
 """
 
 import random
+import functools
 from collections import deque
+import os
 
 from kivy.app import App
+from kivy.logger import Logger
+from kivy.utils import platform 
 from kivy.clock import Clock
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
+from kivy.core.audio import SoundLoader
+from kivy.resources import resource_add_path, resource_find, resource_paths
+
+from android.permissions import request_permissions, Permission
+
+
+###############################################################################
+# This next section includes a class that was not written by me
+# This code was written by user Patrick from StackerOverFlow
+# https://stackoverflow.com/users/6468862/patrick
+# The code is copied from this link:
+# https://stackoverflow.com/questions/45061116/playing-mp3-on-android
+
+class MusicPlayerAndroid(object):
+
+    def __init__(self):
+        from jnius import autoclass
+        MediaPlayer = autoclass('android.media.MediaPlayer')
+        self.mplayer = MediaPlayer()
+
+        self.secs = 0
+        self.actualsong = ''
+        self.length = 0
+        self.isplaying = False
+
+
+    def __del__(self):
+        self.stop()
+        self.mplayer.release()
+        Logger.info('mplayer: deleted')
+
+
+    def load(self, filename):
+        try:
+            self.actualsong = filename
+            self.secs = 0
+            self.mplayer.setDataSource(filename)        
+            self.mplayer.prepare()
+            self.length = self.mplayer.getDuration() / 1000
+            Logger.info('mplayer load: %s' %filename)
+            Logger.info ('type: %s' %type(filename) )
+            return True
+        except:
+            Logger.info('error in title: %s' % filename) 
+            return False
+
+
+    def unload(self):
+            self.mplayer.reset()
+
+
+    def play(self):
+        self.mplayer.start()
+        self.isplaying = True
+        Logger.info('mplayer: play')
+
+
+    def stop(self):
+        self.mplayer.stop()
+        self.secs=0
+        self.isplaying = False
+        Logger.info('mplayer: stop')
+
+
+    def seek(self,timepos_secs):
+        self.mplayer.seekTo(timepos_secs * 1000)
+        Logger.info ('mplayer: seek %s' %int(timepos_secs))
+
 
 
 ###############################################################################
@@ -17,6 +89,8 @@ from kivy.uix.label import Label
 class MainApp(App):
     """Application class. Encopasses all the mechanisms related to the app.
     """
+    request_permissions([Permission.WRITE_EXTERNAL_STORAGE])
+    resource_add_path(os.path.join(os.getcwd(),"mp3_files/"))
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -27,31 +101,44 @@ class MainApp(App):
                                 ("arbejde", "trabalhar"),
                                 ("barbere", "fazer a barba/depilar"),
                                 ("begynde", "começar"))
+        self.mplayer = MusicPlayerAndroid()
 
 
-    def incorrect_button(self, instance: Button):
+    def incorrect_button(self, translation: int, pronounciation: bool, 
+                            instance: Button):
         """When an incorrect solution is pressed, it changes the color of the 
-        button to red.
+        button to red. If the question word is in danish, then it pronounces
+        the word.
 
         Args:
+            translation: 1 if the question is a danish word and 0 if 
+                it is a translation
+            pronounciation: determines if there is an audio file of the 
+                pronounciation of the word 
             instance: instance of the button that was pressed
         """
 
         instance.background_normal = ""
         instance.background_color = "red"
+        if translation == 1 and pronounciation:
+            self.mplayer.play()
 
 
-    def correct_button(self, instance: Button):
+    def correct_button(self, pronounciation: bool, instance: Button):
         """When the correct solution is pressed, it changes the color of the 
-        button to green, waits a second and creates a new set of question, 
-        correct solution and wrong solutions.
+        button to green, pronounces the question word, waits a second and 
+        creates a new set of question, correct solution and wrong solutions.
 
         Args:
+            pronounciation: determines if there is an audio file of the 
+                pronounciation of the word
             instance: instance of the button that was pressed
         """
         instance.background_normal = ""
         instance.background_color = "green"
-        Clock.schedule_once(lambda dt: self.action(instance), 1)
+        if pronounciation:
+            self.mplayer.play()
+        Clock.schedule_once(lambda dt: self.action(instance, pronounciation), 1)
 
 
     def obtain_words_or_meaning(self) -> tuple:
@@ -61,7 +148,7 @@ class MainApp(App):
 
         Returns:
             word_or_meaning (int): 1 if the question is a danish word and 0 if 
-                it is a translation
+                it is a translafrom kivy.logger import LoggerHistorytion
             question (str): the word for which we want the translation
             correct_sol (str): the translation of the question word
             wrong_solutions (list[str]): wrong translations of the question word
@@ -83,7 +170,7 @@ class MainApp(App):
         return (word_or_meaning, question, correct_sol, wrong_solutions)
 
 
-    def action(self, instance: Button) -> FloatLayout:
+    def action(self, instance: Button, pronounciation:bool=False) -> FloatLayout:
         """Action associated with the pressing of the start button. This
         generates a word and 4 possible which correspond to possible
         translations.
@@ -98,14 +185,26 @@ class MainApp(App):
 
         self.main_layout.clear_widgets()
         
-        word_or_meaning, question, correct_sol, wrong_sols = self.obtain_words_or_meaning()
+        translation, question, corr_sol, wrong_sols = self.obtain_words_or_meaning()
         correct = random.choice(self.positions)
+        
+        mp3 = resource_find(f"{question if translation == 1 else corr_sol}.mp3")
+        if pronounciation:
+            self.mplayer.unload()
+        pronounciation = self.mplayer.load(mp3)
 
+        if translation == 1 and pronounciation:
+            self.mplayer.play()
+        
         for pos in self.positions:
-            button = Button(text = correct_sol if pos == correct else wrong_sols.pop(), 
+            button = Button(text = corr_sol 
+                            if pos == correct else wrong_sols.pop(), 
                             size_hint =(1, .2), pos_hint={'x':0, 'y':pos})
-            button.bind(on_press=self.correct_button 
-                                if pos == correct else self.incorrect_button)
+            callback = (functools.partial(self.correct_button, pronounciation)
+                if pos == correct else functools.partial(self.incorrect_button, 
+                                                        translation, 
+                                                        pronounciation))
+            button.bind(on_press=callback)
             self.main_layout.add_widget(button)
         
         question = Label(text=question, size_hint =(1, .2), 
@@ -124,8 +223,8 @@ class MainApp(App):
 
         self.main_layout = FloatLayout()
 
-        button = Button(text='Hello world', size_hint =(.3, .2),
-                        pos_hint={'x':.35, 'y':.4}, background_normal="", 
+        button = Button(text="start", size_hint =(0.3, .2),
+                        pos_hint={'x':0, 'y':.4}, background_normal="", 
                         background_color="yellow", color = "black")
         button.bind(on_press=self.action)
         self.main_layout.add_widget(button)
