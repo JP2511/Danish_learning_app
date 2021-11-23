@@ -9,13 +9,14 @@ import asyncio
 import aiohttp
 import aiofiles
 
-from typing import Set
+from typing import List, Set
 
 ###############################################################################
 # synchronous read of the words from a file
 
-def get_words(filename: str) -> Set[str]:
-    """Obtain the words present in the file [filename].
+def get_words(filename: str) -> dict:
+    """Obtain the words present in the file [filename] and maps these words to
+    their respective translations.
 
     Args:
         filename: name of the file that contains the words
@@ -26,17 +27,23 @@ def get_words(filename: str) -> Set[str]:
     Requires:
         filename should be a valid name of a file
         the words in the file [filename] should be in separated lines
+        the translation of the words should be in the same line and separated
+            from the word in danish with a # character.
     
     Ensures:
         the set of words will only contain unique words and no empty words
     """
 
     with open(filename, 'r', encoding='utf8') as datafile:
-        words = {wrd for wrd in datafile.read().splitlines() if len(wrd) != 0}
+        words = {}
+        for wrd in datafile.read().splitlines():
+            if len(wrd) != 0:
+                key, value = tuple(wrd.split("#"))
+                words[key] = value
     return words
 
 
-def check_words(all_words: Set[str]) -> Set[str]:
+def check_words(all_words: dict) -> Set[str]:
     """Checks if the word already has an associated mp3 sound file. If it does,
     then it removes it from the words whose associated mp3 sound file is going
     to be downloaded.
@@ -45,8 +52,8 @@ def check_words(all_words: Set[str]) -> Set[str]:
         all_words: unfiltered words which we want the associated mp3 file
 
     Returns:
-          words for which we want the associated mp3 file, but we don't already 
-        have the file.
+        words for which we want the associated mp3 file, but we don't already 
+            have the file.
     """
 
     if os.path.exists("mp3_files"):
@@ -55,7 +62,7 @@ def check_words(all_words: Set[str]) -> Set[str]:
                 if word + ".mp3" not in pre_existing_words}
     else:
         os.mkdir("mp3_files")
-        return all_words
+        return set(all_words.keys())
 
 
 ###############################################################################
@@ -92,7 +99,7 @@ async def request_word_page(session: aiohttp.ClientSession, word: str,
     async with session.get('https://ordnet.dk/ddo/ordbog?query='+ word) as rsp:
         if rsp.status == 200:
             await dwn_mp3_file(session, 
-                               re.findall(pattern, await rsp.text())[0], word)
+                                re.findall(pattern, await rsp.text())[0], word)
 
 
 async def make_all_requests(all_words: Set[str]):
@@ -105,9 +112,10 @@ async def make_all_requests(all_words: Set[str]):
 ###############################################################################
 # joining the two parts
 
-def main(filename: str):
+def obtain_mp3(filename: str) -> List[tuple[str, str]]:
     """Downloads the mp3 sound file associated with each word if it has not
-    already been downloaded.
+    already been downloaded and generates a list of tuples of the words that
+    have a pronounciation mp3 file and their respective translation.
 
     Args:
         filename: name of the file that contains the words
@@ -116,11 +124,19 @@ def main(filename: str):
         filename should be a valid name of a file
         the words in the file [filename] should be in separated lines
     """
-    all_words = check_words(get_words(filename))
-    asyncio.run(make_all_requests(all_words))
+
+    words_translations = get_words(filename)
+    asyncio.run(make_all_requests(check_words(words_translations)))
+
+    for file in os.listdir('mp3_files/'):
+        word = file.split(".")[0]
+        if word not in words_translations:
+            del words_translations[word]
+    
+    return list(words_translations.items())
 
 
 ###############################################################################
 
 if __name__ == '__main__':
-    main('words.txt')
+    obtain_mp3('words.txt')
