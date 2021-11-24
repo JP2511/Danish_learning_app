@@ -5,6 +5,8 @@ import random
 import functools
 from collections import deque
 import os
+import re
+from typing import List
 
 from kivy.app import App
 from kivy.logger import Logger
@@ -17,13 +19,34 @@ from kivy.core.audio import SoundLoader
 from kivy.resources import resource_add_path, resource_find, resource_paths
 
 from android.permissions import request_permissions, Permission
-from typing import List, Tuple
 
 
 ###############################################################################
-# TEMPORARY
+# additional necessary functions
 
-def find_words(filename: str) -> List[Tuple(str)]:
+def rename(word: str, reverse: bool=False) -> str:
+    """Renames a word into a version without special characters and the reverse
+    in case reverse is specified.
+
+    Args:
+        word: word to rename
+        reverse: Rename to version without special characters if true and the 
+            reverse if false. Defaults to False.
+
+    Returns:
+        str: Renamed word
+    """
+    if reverse:
+        new_word = re.sub("0", "ø", word)
+        new_word = re.sub("23", "æ", new_word)
+        return re.sub("8", "å", new_word)
+    else:
+        new_word = re.sub("ø", "0", word)
+        new_word = re.sub("æ", "23", new_word)
+        return re.sub("å", "8", new_word)
+
+
+def find_words(filename: str) -> List:
     """Opens the file that has the words and respective translations and stores
     the values in a list of tuples. THIS IS TEMPORARY.
 
@@ -211,7 +234,8 @@ class MainApp(App):
         translation, question, corr_sol, wrong_sols = self.obtain_words_or_meaning()
         correct = random.choice(self.positions)
         
-        mp3 = resource_find(f"{question if translation == 1 else corr_sol}.mp3")
+        filename = rename(f"{question if translation == 1 else corr_sol}.mp3")
+        mp3 = resource_find(filename)
         if pronounciation:
             self.mplayer.unload()
         pronounciation = self.mplayer.load(mp3)

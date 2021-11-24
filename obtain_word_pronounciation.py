@@ -12,6 +12,30 @@ import aiofiles
 from typing import List, Set
 
 ###############################################################################
+
+def rename(word: str, reverse: bool=False) -> str:
+    """Renames a word into a version without special characters and the reverse
+    in case reverse is specified.
+
+    Args:
+        word: word to rename
+        reverse: Rename to version without special characters if true and the 
+            reverse if false. Defaults to False.
+
+    Returns:
+        str: Renamed word
+    """
+    if reverse:
+        new_word = re.sub("0", "ø", word)
+        new_word = re.sub("23", "æ", new_word)
+        return re.sub("8", "å", new_word)
+    else:
+        new_word = re.sub("ø", "0", word)
+        new_word = re.sub("æ", "23", new_word)
+        return re.sub("å", "8", new_word)
+
+
+###############################################################################
 # synchronous read of the words from a file
 
 def get_words(filename: str) -> dict:
@@ -57,7 +81,7 @@ def check_words(all_words: dict) -> Set[str]:
     """
 
     if os.path.exists("mp3_files"):
-        pre_existing_words = set(os.listdir("./mp3_files/"))
+        pre_existing_words = {rename(i) for i in os.listdir("./mp3_files/")}
         return {word for word in all_words 
                 if word + ".mp3" not in pre_existing_words}
     else:
@@ -67,6 +91,22 @@ def check_words(all_words: dict) -> Set[str]:
 
 ###############################################################################
 # asynchronous request of the mp3 files
+
+
+async def a_rename(word: str) -> str:
+    """Asynchronous version of the rename function in the forward direction.
+
+    Args:
+        word: word to be renamed.
+
+    Returns:
+        renamed word.
+    """
+    
+    new_word = re.sub("ø", "0", word)
+    new_word = re.sub("æ", "23", new_word)
+    return re.sub("å", "8", new_word)
+
 
 async def dwn_mp3_file(session: aiohttp.ClientSession, link: str, word: str):
     """Downloads the mp3 sound file from the URL provided to an mp3 file with
@@ -80,7 +120,8 @@ async def dwn_mp3_file(session: aiohttp.ClientSession, link: str, word: str):
 
     async with session.get(link) as rsp:
         if rsp.status == 200:
-            async with aiofiles.open(f"./mp3_files/{word}.mp3", 'wb') as f:
+            async with aiofiles.open(f"./mp3_files/{await a_rename(word)}.mp3", 
+                                        'wb') as f:
                 await f.write(await rsp.read())
 
 
@@ -130,8 +171,9 @@ def obtain_mp3(filename: str) -> List[tuple[str, str]]:
 
     for file in os.listdir('mp3_files/'):
         word = file.split(".")[0]
-        if word not in words_translations:
-            del words_translations[word]
+        r_word = rename(word, True)
+        if r_word not in words_translations:
+            del words_translations[r_word]
     
     return list(words_translations.items())
 
