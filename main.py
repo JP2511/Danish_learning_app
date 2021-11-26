@@ -10,13 +10,12 @@ from typing import List
 
 from kivy.app import App
 from kivy.logger import Logger
-from kivy.utils import platform 
 from kivy.clock import Clock
 from kivy.uix.floatlayout import FloatLayout
 from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.core.audio import SoundLoader
-from kivy.resources import resource_add_path, resource_find, resource_paths
+from kivy.resources import resource_add_path, resource_find
+from kivy.core.window import Window
 
 from android.permissions import request_permissions, Permission
 
@@ -148,6 +147,24 @@ class MainApp(App):
         self.positions = (0, 0.2, 0.4, 0.6)
         self.words_meannings = find_words("words.txt")
         self.mplayer = MusicPlayerAndroid()
+        Window.bind(on_keyboard=self.back_button)
+
+
+    def back_button(self, window: Window, key: int, *args) -> FloatLayout:
+        """When the back button of the phone is pressed, go back to the
+        main menu.
+
+        Args:
+            window: current app window
+            key: key pressed on the phone
+
+        Returns:
+            FloatLayout: layout of the application
+        """
+        
+        if key == 27:
+            self.mplayer.unload()
+            return self.build()
 
 
     def incorrect_button(self, translation: int, pronounciation: bool, 
@@ -268,7 +285,7 @@ class MainApp(App):
             main_layout: layout of the application
         """
 
-        self.main_layout = FloatLayout()
+        self.main_layout.clear_widgets()
 
         button = Button(text="start", size_hint =(0.3, .2),
                         pos_hint={'x':0.35, 'y':.4}, background_normal="", 
