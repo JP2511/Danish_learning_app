@@ -6,18 +6,21 @@ import functools
 from collections import deque
 import os
 import re
-from typing import List
+from typing import List, Callable
 
 from kivy.app import App
 from kivy.logger import Logger
 from kivy.clock import Clock
-from kivy.uix.floatlayout import FloatLayout
-from kivy.uix.button import Button
-from kivy.uix.label import Label
+from kivy.utils import get_color_from_hex
 from kivy.resources import resource_add_path, resource_find
 from kivy.core.window import Window
 
-from android.permissions import request_permissions, Permission
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.floatlayout import FloatLayout
+from kivy.uix.scrollview import ScrollView
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+
 
 
 ###############################################################################
@@ -64,7 +67,16 @@ def find_words(filename: str) -> List:
 
     with open(filename, 'r', encoding='utf8') as datafile:
         data = datafile.read()
-    return [line.split("#") for line in data.splitlines()]
+    
+    vocab_groups = {}
+    for line in data.splitlines():
+        *value, key = line.split("#")
+        if key in vocab_groups:
+            vocab_groups[key].add(tuple(value))
+        else:
+            vocab_groups[key] = {tuple(value)}
+
+    return vocab_groups
 
 
 ###############################################################################
@@ -137,20 +149,68 @@ class MusicPlayerAndroid(object):
 class MainApp(App):
     """Application class. Encopasses all the mechanisms related to the app.
     """
-    request_permissions([Permission.WRITE_EXTERNAL_STORAGE])
-    resource_add_path(os.path.join(os.getcwd(),"mp3_files/"))
+    resource_add_path(os.path.join(os.getcwd(), "mp3_files/"))
 
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.main_layout = FloatLayout()
-        self.positions = (0, 0.2, 0.4, 0.6)
-        self.words_meannings = find_words("words.txt")
+        self.main_layout = GridLayout(cols=1, row_default_height=0.2, 
+                                        size_hint_y=None)
+        self.screen = ScrollView(size_hint=(1, None), effect_cls="ScrollEffect",
+                                    size=(Window.width, Window.height))
+        self.screen.add_widget(self.main_layout)
+        self.vocab_groups = find_words('words.txt')
+        self.words_meannings = set()
         self.mplayer = MusicPlayerAndroid()
         Window.bind(on_keyboard=self.back_button)
 
 
-    def back_button(self, window: Window, key: int, *args) -> FloatLayout:
+    def reset_layout(self):
+        """Resets self.main_layout to the settings, most layouts and screens
+        will require as a starting poit.
+        """
+
+        self.main_layout.clear_widgets()
+        self.main_layout.height = Window.height
+        self.main_layout.row_default_height=0.2
+
+
+    def create_widget(self, label: bool, text: str, function: Callable=None, 
+                        color: str=None):
+        """Generates a label or a button with the information specified and adds
+        it to the self.main_layout.
+
+        Args:
+            label: a flag indicating if the widget being created is a button or
+                a label. If true, it creates a label. Otherwise, it creates a
+                button.
+            text: the text to include in the button.
+            function (optional): The function that activates when the button
+                created gets pressed. Defaults to None.
+            color (optional): color of the button to be created. Defaults to 
+                None. If it has None value, than the button will be created with
+                default color (gray).
+        """
+
+        max_height = Window.height
+
+        if label:
+            label = Label(text=text, size_hint_y=None, height=.2*max_height)
+            self.main_layout.add_widget(label)
+        
+        else:
+            if color:
+                button = Button(text=text, size_hint_y=None, 
+                                height=.2*max_height, background_normal="", 
+                                background_color=color)
+            else:
+                button = Button(text=text, size_hint_y=None, 
+                                height=.2*max_height)
+            button.bind(on_press=function)
+            self.main_layout.add_widget(button)
+
+
+    def back_button(self, window: Window, key: int, *args) -> ScrollView:
         """When the back button of the phone is pressed, go back to the
         main menu.
 
@@ -159,7 +219,7 @@ class MainApp(App):
             key: key pressed on the phone
 
         Returns:
-            FloatLayout: layout of the application
+            layout of the application
         """
         
         if key == 27:
@@ -176,7 +236,8 @@ class MainApp(App):
         Args:
             translation: 1 if the question is a danish word and 0 if 
                 it is a translation
-            pronounciation: determines if there is an audio file of the 
+            pronounciation: determi
+            nes if there is an audio file of the 
                 pronounciation of the word 
             instance: instance of the button that was pressed
         """
@@ -197,6 +258,7 @@ class MainApp(App):
                 pronounciation of the word
             instance: instance of the button that was pressed
         """
+
         instance.background_normal = ""
         instance.background_color = "green"
         if pronounciation:
@@ -211,9 +273,9 @@ class MainApp(App):
 
         Returns:
             word_or_meaning (int): 1 if the question is a danish word and 0 if 
-                it is a translafrom kivy.logger import LoggerHistorytion
+                it is a translation
             question (str): the word for which we want the translation
-            correct_sol (str): the translation of the question word
+            correct_sol (str): the correct translation of the question word
             wrong_solutions (list[str]): wrong translations of the question word
         """
         
@@ -233,10 +295,20 @@ class MainApp(App):
         return (word_or_meaning, question, correct_sol, wrong_solutions)
 
 
-    def action(self, instance: Button, pronounciation:bool=False) -> FloatLayout:
-        """Action associated with the pressing of the start button. This
-        generates a word and 4 possible which correspond to possible
-        translations.
+    def action(self, instance: Button, pronounciation:bool=False) -> ScrollView:
+        """Generates instances of the multiple choice game. This consists in
+        generating a question word which the user has to translate. If the word
+        appears in danish, then the user has to choose one of 4 possible english
+        translations. If the question word appears in english, then the user has
+        to choose one of 4 danish translations. It is only possible to go to
+        another instance of the game, if the user has clicked on the correct
+        answer.
+            Additionally, if the question word is in danish, the first time it
+        appears, the sound of its pronounciation will be played when the 
+        instance of the game is generated, when an incorrect choice is made and
+        when a correct choice is made. If the question word is in english, 
+        however, then the sound of the pronounciation of the word in danish is
+        only played when the correct option is clicked.
 
         Args:
             instance: instance of the button the was pressed that triggered 
@@ -246,54 +318,120 @@ class MainApp(App):
             main_layout: updated version of the layout of the application
         """
 
-        self.main_layout.clear_widgets()
+        self.reset_layout()
         
         translation, question, corr_sol, wrong_sols = self.obtain_words_or_meaning()
-        correct = random.choice(self.positions)
         
         filename = rename(f"{question if translation == 1 else corr_sol}.mp3")
         mp3 = resource_find(filename)
+        
         if pronounciation:
             self.mplayer.unload()
         pronounciation = self.mplayer.load(mp3)
 
         if translation == 1 and pronounciation:
             self.mplayer.play()
+
+        self.create_widget(True, question)
         
-        for pos in self.positions:
-            button = Button(text = corr_sol 
-                            if pos == correct else wrong_sols.pop(), 
-                            size_hint =(1, .2), pos_hint={'x':0, 'y':pos})
-            callback = (functools.partial(self.correct_button, pronounciation)
-                if pos == correct else functools.partial(self.incorrect_button, 
-                                                        translation, 
-                                                        pronounciation))
-            button.bind(on_press=callback)
-            self.main_layout.add_widget(button)
+        options = [corr_sol, *wrong_sols]
+        random.shuffle(options)
+        for sol in options:
+            if sol == corr_sol:
+                callback = functools.partial(self.correct_button, 
+                                                pronounciation)
+            else:
+                callback = functools.partial(self.incorrect_button, translation, 
+                                                pronounciation)
+            self.create_widget(False, sol, callback)
         
-        question = Label(text=question, size_hint =(1, .2), 
-                            pos_hint={'x':0, 'y':.8})
-        self.main_layout.add_widget(question)
-        return self.main_layout
+        return self.screen
 
 
-    def build(self) -> FloatLayout:
+    def vocab_done(self, instance: Button) -> ScrollView:
+        """Proceeds to the multiple choice game with the vocabulary sets chosen,
+        if vocabulary sets have been chosen. Otherwise, it will return to the
+        options layout.
+
+        Args:
+            instance: instance of the button the was pressed that triggered this
+                function
+
+        Returns:
+            ScrollView: 
+        """
+
+        if len(self.words_meannings):
+            self.words_meannings = list(self.words_meannings)
+            return self.action(instance)
+        
+        return self.vocab_options(instance)
+    
+    
+    def vocab_choice(self, instance: Button):
+        """Adds the vocabulary set chosen to the vocabulary set that is going
+        to be used in the multiple choice game.
+
+        Args:
+            instance: instance of the button the was pressed that triggered this
+                function
+        """
+
+        self.words_meannings |= self.vocab_groups[instance.text]
+        instance.background_normal = ""
+        instance.background_color = get_color_from_hex("#99ccff")
+
+
+    def vocab_options(self, instance: Button) -> ScrollView:
+        """Generates the screen that allows the user to choose one or more
+        vocabulary sets to use in the multiple choice game.
+
+        Args:
+            instance: instance of the button the was pressed that triggered this
+                function.
+
+        Returns:
+            self.screen: screen of the application.
+        """
+
+        options = self.vocab_groups.keys()
+        self.reset_layout()
+
+        if len(options) > 3:
+            self.main_layout.height += Window.height*(len(options)-3)*0.2
+
+        self.create_widget(True, "Choose one or more vocabulary sets:")
+        for option in options:
+            self.create_widget(False, option, self.vocab_choice)
+
+        # button to submit choice of vocabulary
+        self.create_widget(False, "Done", self.vocab_done, 
+                            get_color_from_hex("#0b6ac1"))
+        
+        # button to create a new vocabulary set
+        self.create_widget(False, "Create a new vocabulary set", 
+                            self.vocab_done)
+        return self.screen
+
+
+    def build(self) -> ScrollView:
         """It creates the layout of the application and presents the first 
         screen when opening the app and its first options.
 
         Returns:
-            main_layout: layout of the application
+            self.screen: screen of the application
         """
 
-        self.main_layout.clear_widgets()
+        self.reset_layout()
+        inside_layout = FloatLayout()
+        self.main_layout.add_widget(inside_layout)
 
-        button = Button(text="start", size_hint =(0.3, .2),
-                        pos_hint={'x':0.35, 'y':.4}, background_normal="", 
-                        background_color="yellow", color = "black")
-        button.bind(on_press=self.action)
-        self.main_layout.add_widget(button)
-
-        return self.main_layout
+        button = Button(text="start", size_hint_y=None, color="black", 
+                        background_normal="", background_color="yellow", 
+                        size_hint=(0.3, 0.2), pos_hint={'x':.35, 'y':.4})
+        button.bind(on_press=self.vocab_options)
+        inside_layout.add_widget(button)
+        return self.screen
 
 
 
