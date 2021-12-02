@@ -27,3 +27,10 @@ gøre#to do; to make#Verbs
 gå#to go; to walk#Verbs
 have#to have#Verbs
 heddle#to be named#Verbs
+ryg#back#Body
+bryst#chest#Body
+kjole#dress#Clothes
+sweater#sweater#Clothes
+første#first#Cardinal Numbers
+anden#second#Cardinal Numbers
+tredje#third#Cardinal Numbers

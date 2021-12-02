@@ -160,7 +160,7 @@ class MainApp(App):
                                     size=(Window.width, Window.height))
         self.screen.add_widget(self.main_layout)
         self.vocab_groups = find_words('words.txt')
-        self.words_meannings = set()
+        self.words_meannings = []
         self.mplayer = MusicPlayerAndroid()
         Window.bind(on_keyboard=self.back_button)
 
@@ -190,6 +190,10 @@ class MainApp(App):
             color (optional): color of the button to be created. Defaults to 
                 None. If it has None value, than the button will be created with
                 default color (gray).
+        
+        Requires:
+            if the widget being created corresponds to a button, then it is 
+                required that a function is provided.
         """
 
         max_height = Window.height
@@ -361,8 +365,11 @@ class MainApp(App):
             ScrollView: 
         """
 
-        if len(self.words_meannings):
-            self.words_meannings = list(self.words_meannings)
+        if len(self.words_meannings) > 0:
+            vocab_to_use = set()
+            for vocab in self.words_meannings:
+                vocab_to_use |= set(self.vocab_groups[vocab])
+            self.words_meannings = list(vocab_to_use)
             return self.action(instance)
         
         return self.vocab_options(instance)
@@ -377,7 +384,7 @@ class MainApp(App):
                 function
         """
 
-        self.words_meannings |= self.vocab_groups[instance.text]
+        self.words_meannings.append(instance.text)
         instance.background_normal = ""
         instance.background_color = get_color_from_hex("#99ccff")
 
@@ -395,10 +402,11 @@ class MainApp(App):
         """
 
         options = self.vocab_groups.keys()
+        self.words_meannings = []
         self.reset_layout()
 
         if len(options) > 3:
-            self.main_layout.height += Window.height*(len(options)-3)*0.2
+            self.main_layout.height += Window.height*(len(options)-2)*0.2
 
         self.create_widget(True, "Choose one or more vocabulary sets:")
         for option in options:
@@ -410,7 +418,7 @@ class MainApp(App):
         
         # button to create a new vocabulary set
         self.create_widget(False, "Create a new vocabulary set", 
-                            self.vocab_done)
+                            self.vocab_done, get_color_from_hex("#9e83e5"))
         return self.screen
 
 

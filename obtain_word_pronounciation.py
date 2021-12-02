@@ -62,7 +62,7 @@ def get_words(filename: str) -> dict:
         words = {}
         for wrd in datafile.read().splitlines():
             if len(wrd) != 0:
-                key, value = tuple(wrd.split("#"))
+                key, value = tuple(wrd.split("#")[:2])
                 words[key] = value
     return words
 
